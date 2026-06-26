@@ -1,0 +1,18 @@
+Finance Operations Anomaly Detection Model Summary
+========================================================
+Rows scored: 25,000
+Isolation Forest contamination: 6.50%
+Precision: 0.619
+Recall: 0.619
+F1 score: 0.619
+
+Confusion matrix, labels [normal, anomaly]:
+[[22756   619]
+ [  619  1006]]
+
+Features used:
+amount, approval_level, account_age_days, vendor_risk_score, previous_failed_payments, duplicate_invoice_flag, urgent_payment_flag, weekend_payment_flag, approval_delay_days, failed_payment_flag, high_value_flag, high_vendor_risk_flag, approval_speed_flag, risk_rule_score, transaction_hour, amount_zscore, department, currency, payment_method, payment_status, country, region, expense_category, transaction_day
+
+Interpretation:
+Higher anomaly_score values indicate transactions that look more unusual
+relative to the rest of the synthetic finance operations population.
