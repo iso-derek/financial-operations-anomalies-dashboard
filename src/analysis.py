@@ -28,15 +28,15 @@ def total_transactions(df: pd.DataFrame) -> int:
 
 
 def total_spend(df: pd.DataFrame) -> float:
-    return float(df["amount"].sum())
+    return float(df["amount_base"].sum())
 
 
 def average_transaction_value(df: pd.DataFrame) -> float:
-    return float(df["amount"].mean()) if len(df) else 0.0
+    return float(df["amount_base"].mean()) if len(df) else 0.0
 
 
 def anomaly_rate(df: pd.DataFrame) -> float:
-    col = "model_prediction" if "model_prediction" in df.columns else "is_anomaly"
+    col = "model_prediction"
     return float(df[col].mean()) if len(df) else 0.0
 
 
@@ -45,7 +45,7 @@ def failed_payment_rate(df: pd.DataFrame) -> float:
 
 
 def duplicate_invoice_rate(df: pd.DataFrame) -> float:
-    return float(df["duplicate_invoice_flag"].mean()) if len(df) else 0.0
+    return float(df["duplicate_observed"].mean()) if len(df) else 0.0
 
 
 def urgent_payment_rate(df: pd.DataFrame) -> float:
@@ -60,7 +60,7 @@ def top_high_risk_vendors(df: pd.DataFrame, n: int = 10) -> pd.DataFrame:
     return (
         df.groupby(["vendor_id", "vendor_name"], as_index=False)
         .agg(
-            total_spend=("amount", "sum"),
+            total_spend=("amount_base", "sum"),
             avg_vendor_risk=("vendor_risk_score", "mean"),
             anomaly_count=("model_prediction", "sum"),
             transaction_count=("transaction_id", "count"),
@@ -73,7 +73,7 @@ def top_high_risk_vendors(df: pd.DataFrame, n: int = 10) -> pd.DataFrame:
 def top_anomalous_departments(df: pd.DataFrame) -> pd.DataFrame:
     return (
         df.groupby("department", as_index=False)
-        .agg(anomaly_count=("model_prediction", "sum"), transactions=("transaction_id", "count"), spend=("amount", "sum"))
+        .agg(anomaly_count=("model_prediction", "sum"), transactions=("transaction_id", "count"), spend=("amount_base", "sum"))
         .assign(anomaly_rate=lambda x: x["anomaly_count"] / x["transactions"])
         .sort_values("anomaly_count", ascending=False)
     )
@@ -82,7 +82,7 @@ def top_anomalous_departments(df: pd.DataFrame) -> pd.DataFrame:
 def department_spend_summary(df: pd.DataFrame) -> pd.DataFrame:
     return (
         df.groupby("department", as_index=False)
-        .agg(total_spend=("amount", "sum"), avg_transaction=("amount", "mean"), transactions=("transaction_id", "count"))
+        .agg(total_spend=("amount_base", "sum"), avg_transaction=("amount_base", "mean"), transactions=("transaction_id", "count"))
         .sort_values("total_spend", ascending=False)
     )
 
@@ -94,7 +94,7 @@ def vendor_risk_summary(df: pd.DataFrame) -> pd.DataFrame:
     temp["vendor_risk_band"] = pd.cut(temp["vendor_risk_score"], bins=bins, labels=labels, include_lowest=True)
     return (
         temp.groupby("vendor_risk_band", observed=False, as_index=False)
-        .agg(transactions=("transaction_id", "count"), total_spend=("amount", "sum"), anomaly_count=("model_prediction", "sum"))
+        .agg(transactions=("transaction_id", "count"), total_spend=("amount_base", "sum"), anomaly_count=("model_prediction", "sum"))
         .assign(anomaly_rate=lambda x: x["anomaly_count"] / x["transactions"])
     )
 
@@ -110,7 +110,7 @@ def expense_category_anomaly_rate(df: pd.DataFrame) -> pd.DataFrame:
 def _grouped_anomaly_rate(df: pd.DataFrame, column: str) -> pd.DataFrame:
     return (
         df.groupby(column, as_index=False)
-        .agg(anomaly_count=("model_prediction", "sum"), transactions=("transaction_id", "count"), spend=("amount", "sum"))
+        .agg(anomaly_count=("model_prediction", "sum"), transactions=("transaction_id", "count"), spend=("amount_base", "sum"))
         .assign(anomaly_rate=lambda x: x["anomaly_count"] / x["transactions"])
         .sort_values("anomaly_rate", ascending=False)
     )
@@ -119,7 +119,7 @@ def _grouped_anomaly_rate(df: pd.DataFrame, column: str) -> pd.DataFrame:
 def monthly_transaction_trends(df: pd.DataFrame) -> pd.DataFrame:
     return (
         df.groupby("transaction_month", as_index=False)
-        .agg(transactions=("transaction_id", "count"), spend=("amount", "sum"))
+        .agg(transactions=("transaction_id", "count"), spend=("amount_base", "sum"))
         .sort_values("transaction_month")
     )
 
@@ -139,15 +139,15 @@ def approval_delay_summary(df: pd.DataFrame) -> pd.DataFrame:
 
 def explain_anomaly(row: pd.Series) -> str:
     reasons: list[str] = []
-    if row.get("duplicate_invoice_flag", 0) == 1:
+    if row.get("duplicate_observed", 0) == 1:
         reasons.append("Possible duplicate invoice")
-    if row.get("urgent_payment_flag", 0) == 1 and row.get("amount", 0) >= 50_000 and row.get("vendor_risk_score", 0) >= 70:
+    if row.get("urgent_payment_flag", 0) == 1 and row.get("amount_base", 0) >= 50_000 and row.get("vendor_risk_score", 0) >= 70:
         reasons.append("High-value urgent payment to high-risk vendor")
-    elif row.get("urgent_payment_flag", 0) == 1 and row.get("amount", 0) >= 50_000:
+    elif row.get("urgent_payment_flag", 0) == 1 and row.get("amount_base", 0) >= 50_000:
         reasons.append("Urgent high-value payment")
     if row.get("weekend_payment_flag", 0) == 1 and row.get("vendor_risk_score", 0) >= 60:
         reasons.append("Weekend payment with elevated vendor risk")
-    if row.get("approval_delay_days", 99) <= 1 and row.get("amount", 0) >= 40_000:
+    if row.get("approval_delay_days", 99) <= 1 and row.get("amount_base", 0) >= 40_000:
         reasons.append("Very fast approval for unusually high amount")
     if row.get("previous_failed_payments", 0) >= 3 or row.get("failed_payment_flag", 0) == 1:
         reasons.append("Repeated failed payments linked to vendor")
