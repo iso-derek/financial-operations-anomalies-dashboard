@@ -7,3 +7,7 @@ data/raw/*.csv
 data/processed/*.db
 .ipynb_checkpoints/
 .DS_Store
+
+outputs/
+data/processed/*.csv
+data/processed/model_summary.json
