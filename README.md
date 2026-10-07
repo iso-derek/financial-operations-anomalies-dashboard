@@ -31,3 +31,6 @@ This is a retrospective audit, not real-time fraud prevention. Approval outcomes
 The synthetic generator embeds simple anomaly patterns and uses the same nominal amount distribution across currencies. Normalisation does not make those distributions economically realistic. FX staleness, historical vendor attributes, unobserved fraud, privacy, access control and external validity require further work with a suitable real dataset. Local case history is not a tamper-proof production audit log.
 
 See [research protocol](docs/RESEARCH_PROTOCOL.md) and [measured results](docs/RESEARCH_RESULTS.md).
+# One-command local launch
+
+On Windows with Python 3.13, double-click `Start.cmd`, or run `py -3.13 launch.py` in this folder. Python 3.12 is also supported. See [quick start and research history](docs/QUICKSTART.md).

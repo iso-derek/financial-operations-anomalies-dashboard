@@ -1,0 +1,6 @@
+{
+  "name": "Financial Operations Audit Lab",
+  "app": "dashboard/app.py",
+  "port": 8504
+}
+
