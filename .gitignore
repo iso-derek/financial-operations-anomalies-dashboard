@@ -11,3 +11,5 @@ data/processed/*.db
 outputs/
 data/processed/*.csv
 data/processed/model_summary.json
+/.venv/
+/runs/
