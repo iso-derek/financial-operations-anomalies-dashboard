@@ -11,6 +11,23 @@ python -m unittest discover -s tests -v
 python scripts/run_research.py
 ```
 
+### Audit Desk web app (preview)
+
+A React web app with a FastAPI backend (`api/`) built on the same `src/` code.
+It has an overview, an inbox-style review queue that explains why each payment
+was flagged, case notes with history, accuracy results, and CSV uploads.
+Requires Python 3.12+ and Node.js 20+.
+
+```bash
+pip install -r requirements.txt
+cd web && npm install && npm run build && cd ..
+python -m uvicorn api.main:app --port 8000
+```
+
+Open http://localhost:8000. Cases are saved to `data/processed/investigations.db`,
+or to the path in the `AUDIT_DB_PATH` environment variable. For development, run
+the API with `--reload` and `npm run dev` in `web/`, then open http://localhost:5173.
+
 The dashboard generates a 5,000-record synthetic demonstration. The reproducible CLI benchmark uses 25,000 records. Neither represents a real organisation. Upload transaction and dated FX CSVs to study another labelled dataset.
 
 ## Implemented
