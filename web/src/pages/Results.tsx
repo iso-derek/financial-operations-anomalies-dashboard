@@ -8,11 +8,46 @@ interface ResearchData {
   partitions: Record<string, number>; test_transactions: number; labelled_anomalies: number; interpretation: string;
 }
 
+interface PublicResearch {
+  labelled: false; interpretation: string; budget: number; transactions: number; flagged: number; large_payment_threshold: number;
+  agency: string; fiscal_year: number; source: string; source_url: string; reason_counts: Record<string, number>;
+}
+
+function PublicResults({ data }: { data: PublicResearch }) {
+  const reasons = Object.entries(data.reason_counts).filter(([, count]) => count > 0).sort((a, b) => b[1] - a[1]);
+  return (
+    <>
+      <PageHead title="How well does the queue work?">
+        For real public spending there is no answer key: no public source says which payments were improper. So accuracy can't be measured
+        here — the queue simply ranks the most unusual {percent(data.budget)} of payments for a person to check.
+      </PageHead>
+      <div className="grid cols-3">
+        <Stat label="Contract actions analysed" value={data.transactions.toLocaleString()} note={`${data.agency}, fiscal year ${data.fiscal_year}`} />
+        <Stat label="Flagged for review" value={data.flagged.toLocaleString()} />
+        <Stat label="Unusually large starts at" value={usd(data.large_payment_threshold, true)} note="This agency's top 5% of payments" />
+      </div>
+      <Card title="Why payments were flagged" className="section">
+        <div className="stack">
+          {reasons.map(([reason, count]) => (
+            <div key={reason}>
+              <div className="row between small"><span>{reason}</span><strong>{count}</strong></div>
+              <div className="bar-track" style={{ marginTop: 6 }}><span style={{ width: `${(100 * count) / data.flagged}%` }} /></div>
+            </div>
+          ))}
+        </div>
+      </Card>
+      <div className="section"><Notice>{data.interpretation} Source: <a href={data.source_url} target="_blank" rel="noreferrer">{data.source}</a></Notice></div>
+      <p className="small muted">To see measured accuracy, switch to the demo data on the Your data page, where every payment has a known label.</p>
+    </>
+  );
+}
+
 export default function Results() {
   const { dataset } = useDataset();
-  const { data, error } = useApi<ResearchData>(apiUrl("research", { dataset }));
+  const { data, error } = useApi<ResearchData | PublicResearch>(apiUrl("research", { dataset }));
   if (error) return <Notice tone="warn">{error}</Notice>;
   if (!data) return <Skeleton height={360} />;
+  if ("labelled" in data) return <PublicResults data={data} />;
   const best = data.methods.find((method) => method.selected)!;
 
   return (

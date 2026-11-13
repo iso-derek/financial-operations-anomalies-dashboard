@@ -28,6 +28,7 @@ sys.path.insert(0, str(ROOT))
 from src.audit_research import demo_rates, study, top_budget  # noqa: E402
 from src.cases import STATUSES, connect, get_case, history, save_case  # noqa: E402
 from src.generate_data import generate_finance_operations  # noqa: E402
+from src import public_spending  # noqa: E402
 
 Method = Literal["rules_score", "ml_score", "hybrid_score"]
 METHOD_NAMES = {"rules_score": "Audit rules", "ml_score": "Machine learning", "hybrid_score": "Rules + machine learning"}
@@ -35,6 +36,11 @@ METHOD_BLURBS = {
     "rules_score": "Points for large amounts, risky vendors, duplicates, failed and urgent payments.",
     "ml_score": "An isolation forest that spots transactions unlike the usual pattern.",
     "hybrid_score": "A blend of both, weighted on the validation period.",
+}
+PUBLIC_BLURBS = {
+    "rules_score": "Points for unusually large, repeated, round and weekend payments.",
+    "ml_score": "An isolation forest that spots payments unlike this agency's usual pattern.",
+    "hybrid_score": "An even blend of both. With no labels there is no validation period, so the weights are fixed.",
 }
 DB_PATH = Path(os.environ.get("AUDIT_DB_PATH", ROOT / "data" / "processed" / "investigations.db"))
 
@@ -47,6 +53,13 @@ def dataset(key: str) -> tuple[pd.DataFrame, pd.DataFrame, dict]:
     with _lock:
         if key == "demo" and key not in _datasets:
             _datasets[key] = study(generate_finance_operations(5000), demo_rates())
+        if key.startswith("usa-") and key not in _datasets:
+            try:
+                _, agency, year = key.split("-")
+                df, meta = public_spending.load(agency, int(year))
+            except (ValueError, OSError) as exc:
+                raise HTTPException(503, f"USAspending data couldn't be loaded: {exc}") from exc
+            _datasets[key] = (df, pd.DataFrame(), meta)
         if key not in _datasets:
             raise HTTPException(404, "That uploaded dataset is no longer available. Please upload it again.")
         return _datasets[key]
@@ -66,6 +79,8 @@ def evaluated(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def reasons(row: pd.Series, meta: dict) -> list[str]:
+    if "flag_reasons" in row:
+        return list(row.flag_reasons)
     found = []
     if row.amount_base >= meta["train_high_value_usd"]:
         found.append("Unusually large payment")
@@ -96,7 +111,7 @@ def summary_row(row: pd.Series, meta: dict, method: str, cases: dict) -> dict:
         "category": row.get("expense_category"), "date": row.transaction_date.strftime("%Y-%m-%d"),
         "amount": num(row.amount), "currency": row.currency, "amount_usd": num(row.amount_base),
         "score": num(row[method]), "reasons": reasons(row, meta), "status": case["status"] if case else "New",
-        "labelled_anomaly": bool(row.is_anomaly),
+        "labelled_anomaly": bool(row.is_anomaly), "link": row.get("link"),
     }
 
 
@@ -111,6 +126,8 @@ def overview(dataset_key: str = Query("demo", alias="dataset"), department: str 
                                                transactions=("transaction_id", "count"))
                .sort_values(["flagged", "spend"], ascending=False).head(10))
     return {
+        "public": not meta.get("labelled", True), "source": meta.get("source"), "source_url": meta.get("source_url"),
+        "agency": meta.get("agency"), "fiscal_year": meta.get("fiscal_year"),
         "departments": sorted(test.department.unique().tolist()),
         "kpis": {"transactions": int(len(view)), "spend": num(view.amount_base.sum()),
                  "flagged": int(view.model_prediction.sum()), "currencies": int(view.currency.nunique()),
@@ -136,9 +153,11 @@ def queue(dataset_key: str = Query("demo", alias="dataset"), method: Method | No
     rows = [summary_row(row, meta, method, cases) for _, row in picked.iterrows()]
     if status:
         rows = [row for row in rows if row["status"] == status]
+    public = not meta.get("labelled", True)
+    blurbs = PUBLIC_BLURBS if public else METHOD_BLURBS
     return {
-        "method": method, "budget": meta["budget"], "selected": meta["selected_on_validation"],
-        "methods": [{"key": key, "label": label, "blurb": METHOD_BLURBS[key]} for key, label in METHOD_NAMES.items()],
+        "method": method, "budget": meta["budget"], "selected": meta["selected_on_validation"], "public": public,
+        "methods": [{"key": key, "label": label, "blurb": blurbs[key]} for key, label in METHOD_NAMES.items()],
         "statuses": STATUSES, "rows": rows,
     }
 
@@ -151,6 +170,8 @@ def transaction(transaction_id: str, dataset_key: str = Query("demo", alias="dat
         raise HTTPException(404, "No transaction has that ID.")
     row = match.iloc[0]
     case = get_case(DB_PATH, transaction_id)
+    if not meta.get("labelled", True):
+        return public_transaction(row, df, meta, case, transaction_id)
     details = [
         ("Vendor", row.vendor_name), ("Vendor ID", row.vendor_id), ("Department", row.department),
         ("Category", row.get("expense_category")), ("Invoice", row.invoice_id), ("Project", row.get("project_code")),
@@ -209,9 +230,44 @@ def cases(dataset_key: str = Query("demo", alias="dataset")):
 
 
 # ---------------------------------------------------------------- research
+def public_transaction(row, df, meta, case, transaction_id):
+    details = [("Recipient", row.vendor_name), ("Recipient ID (UEI)", row.vendor_id), ("Buying office", row.department),
+               ("What was bought", row.expense_category), ("Industry", row.industry), ("Contract type", row.award_type),
+               ("Award", row.award_id), ("Modification", "Original award" if row.modification == "0" else row.modification),
+               ("Description", row.description.capitalize() if row.description else None)]
+    peers = df[(df.department == row.department) & (df.amount > 0)]
+    return {
+        **summary_row(row, meta, "hybrid_score", {transaction_id: case} if case else {}),
+        "public": True, "rate": 1.0, "rate_source": None,
+        "dates": {"action": row.transaction_date.strftime("%Y-%m-%d")},
+        "details": [{"label": label, "value": None if value in (None, "") else str(value)} for label, value in details],
+        "context": {"office_median": num(peers.amount.median()) if len(peers) else None, "office_payments": int(len(peers)),
+                    "recipient_payments": int((df.vendor_name == row.vendor_name).sum())},
+        "scores": [{"key": key, "label": label, "score": num(row[key]),
+                    "in_queue": bool(row.transaction_id in set(top_budget(df, key, meta["budget"]).transaction_id))}
+                   for key, label in METHOD_NAMES.items()],
+        "evaluated": True,
+        "case": case or {"status": "New", "reviewer": "", "notes": "", "version": 0},
+        "history": history(DB_PATH, transaction_id),
+    }
+
+
+@app.get("/api/public/agencies")
+def public_agencies():
+    return {"agencies": [{"key": key, "label": label} for key, label in public_spending.AGENCIES.items()],
+            "years": [2026, 2025, 2024], "source": public_spending.CITATION, "source_url": public_spending.SOURCE_URL}
+
+
 @app.get("/api/research")
 def research(dataset_key: str = Query("demo", alias="dataset")):
     df, metrics, meta = dataset(dataset_key)
+    if not meta.get("labelled", True):
+        return {"labelled": False, "interpretation": meta["interpretation"], "budget": meta["budget"],
+                "transactions": int(len(df)), "flagged": int(df.model_prediction.sum()),
+                "large_payment_threshold": meta["large_payment_threshold"], "agency": meta.get("agency"),
+                "fiscal_year": meta.get("fiscal_year"), "source": meta.get("source"), "source_url": meta.get("source_url"),
+                "reason_counts": {reason: int(sum(reason in reasons_ for reasons_ in df.flag_reasons[df.model_prediction == 1]))
+                                  for reason in sorted({r for rs in df.flag_reasons for r in rs})}}
     test = evaluated(df)
     rows = []
     for item in metrics.to_dict("records"):

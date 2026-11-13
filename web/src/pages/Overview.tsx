@@ -7,6 +7,7 @@ import { day, month, usd } from "../format";
 import { Card, Notice, PageHead, Skeleton, Stat, useDataset } from "../components/ui";
 
 interface OverviewData {
+  public?: boolean; source?: string | null; source_url?: string | null; agency?: string | null; fiscal_year?: number | null;
   departments: string[];
   kpis: { transactions: number; spend: number; flagged: number; currencies: number; start: string; end: string };
   by_department: { department: string; spend: number }[];
@@ -25,9 +26,17 @@ export default function Overview() {
 
   return (
     <>
-      <PageHead title="Spending at a glance">
-        Payments from {day(kpis.start)} to {day(kpis.end)} — the period the review model is judged on. Amounts are converted to US dollars.
+      <PageHead title={data.public ? `${data.agency}: spending at a glance` : "Spending at a glance"}>
+        {data.public
+          ? <>Real federal contract actions from {day(kpis.start)} to {day(kpis.end)} (fiscal year {data.fiscal_year}), sampled month by month from{" "}
+              <a href={data.source_url ?? "#"} target="_blank" rel="noreferrer">USAspending.gov</a>.</>
+          : <>Payments from {day(kpis.start)} to {day(kpis.end)} — the period the review model is judged on. Amounts are converted to US dollars.</>}
       </PageHead>
+      {data.public && (
+        <div style={{ marginBottom: 14 }}>
+          <Notice>Real, public U.S. government data. Flags mark payments that look unusual compared with this agency's others — they are prompts for a closer look, not evidence of wrongdoing by any recipient.</Notice>
+        </div>
+      )}
       {dataset === "demo" && <div style={{ marginBottom: 14 }}><Notice tone="warn">Demo data: vendors, amounts and exchange rates are fictional.</Notice></div>}
 
       <div className="row between" style={{ marginBottom: 14 }}>
@@ -42,14 +51,14 @@ export default function Overview() {
       </div>
 
       <div className="grid cols-4">
-        <Stat label="Payments" value={kpis.transactions.toLocaleString()} note={`In ${kpis.currencies} currencies`} />
+        <Stat label={data.public ? "Contract actions" : "Payments"} value={kpis.transactions.toLocaleString()} note={data.public ? "Including money returned" : `In ${kpis.currencies} currencies`} />
         <Stat label="Total spend" value={usd(kpis.spend, true)} note="US dollar equivalent" />
-        <Stat label="Flagged for review" value={kpis.flagged.toLocaleString()} note={`By ${data.method.toLowerCase()}`} />
+        <Stat label="Flagged for review" value={kpis.flagged.toLocaleString()} note={data.public ? "Most unusual 10%" : `By ${data.method.toLowerCase()}`} />
         <Stat label="Average payment" value={usd(kpis.transactions ? kpis.spend / kpis.transactions : null)} note="Per transaction" />
       </div>
 
       <div className="grid cols-2 section">
-        <Card title="Spend by department">
+        <Card title={data.public ? "Spend by buying office" : "Spend by department"}>
           <div style={{ height: Math.max(240, data.by_department.length * 32) }}>
             <ResponsiveContainer>
               <BarChart data={data.by_department} layout="vertical" margin={{ top: 0, right: 16, bottom: 0, left: 0 }}>

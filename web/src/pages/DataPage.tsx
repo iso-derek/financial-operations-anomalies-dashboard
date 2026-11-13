@@ -1,7 +1,7 @@
 import { useState, type ChangeEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { Download, FileUp } from "lucide-react";
-import { apiUrl, send } from "../api";
+import { apiUrl, send, useApi } from "../api";
 import { Card, Notice, PageHead, useDataset } from "../components/ui";
 
 const TRANSACTION_COLUMNS = ["transaction_id", "invoice_id", "vendor_id", "vendor_name", "department", "transaction_date", "invoice_date",
@@ -17,6 +17,55 @@ function FilePicker({ label, file, onPick }: { label: string; file: File | null;
       <div className="small muted">{file ? `${(file.size / 1024).toFixed(0)} KB` : "Click to choose a CSV file"}</div>
       <input type="file" accept=".csv,text/csv" hidden onChange={(event: ChangeEvent<HTMLInputElement>) => onPick(event.target.files?.[0] ?? null)} />
     </label>
+  );
+}
+
+interface Agencies { agencies: { key: string; label: string }[]; years: number[]; source: string; source_url: string }
+
+/** Real federal contract spending from USAspending.gov (public domain). */
+function PublicSpending() {
+  const { setDataset } = useDataset();
+  const navigate = useNavigate();
+  const options = useApi<Agencies>(apiUrl("public/agencies"));
+  const [agency, setAgency] = useState("hhs");
+  const [year, setYear] = useState(2026);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string>();
+  const load = async () => {
+    const key = `usa-${agency}-${year}`;
+    setBusy(true);
+    setError(undefined);
+    try {
+      await send(apiUrl("overview", { dataset: key }));
+      const name = options.data?.agencies.find((item) => item.key === agency)?.label ?? agency;
+      setDataset(key, `${name} · FY${year} · USAspending.gov`);
+      navigate("/");
+    } catch (problem) {
+      setError((problem as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Card title="Real federal spending" className="section"
+      sub={<>Real U.S. government contract payments from <a href={options.data?.source_url ?? "https://www.usaspending.gov"} target="_blank" rel="noreferrer">USAspending.gov</a> (public domain). About 1,200 payments, sampled from every month of the year.</>}>
+      <div className="row">
+        <select className="input" style={{ width: "auto" }} value={agency} onChange={(event) => setAgency(event.target.value)} aria-label="Agency">
+          {options.data?.agencies.map((item) => <option key={item.key} value={item.key}>{item.label}</option>)}
+        </select>
+        <select className="input" style={{ width: "auto" }} value={year} onChange={(event) => setYear(Number(event.target.value))} aria-label="Fiscal year">
+          {(options.data?.years ?? [2026]).map((item) => <option key={item} value={item}>Fiscal year {item}</option>)}
+        </select>
+        <button className="button button-primary" type="button" disabled={busy || !options.data} onClick={load}>
+          {busy ? "Downloading… (about 30 seconds the first time)" : "Load real spending"}
+        </button>
+      </div>
+      {error && <div className="section"><Notice tone="warn">{error}</Notice></div>}
+      <p className="small muted" style={{ marginBottom: 0 }}>
+        There are no fraud labels for real spending, so the accuracy page explains the flags instead of scoring them. A flag is a prompt
+        for a closer look, never evidence of wrongdoing.
+      </p>
+    </Card>
   );
 }
 
@@ -54,6 +103,7 @@ export default function DataPage() {
           <a className="button" href={apiUrl("downloads/scores", { dataset })}><Download size={16} aria-hidden /> Download scored payments</a>
         </div>
       </Card>
+      <PublicSpending />
       <Card title="Upload payments" className="section" sub="Two CSV files: the payments, and the exchange rates to convert them to US dollars">
         <div className="grid cols-2">
           <FilePicker label="Payments CSV" file={transactions} onPick={setTransactions} />

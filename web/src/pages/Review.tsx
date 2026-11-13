@@ -7,16 +7,18 @@ import { Notice, PageHead, Segmented, Skeleton, StatusBadge, useDataset } from "
 
 interface Row {
   id: string; vendor: string; department: string; category: string | null; date: string; amount: number; currency: string;
-  amount_usd: number; score: number; reasons: string[]; status: string; labelled_anomaly: boolean;
+  amount_usd: number; score: number; reasons: string[]; status: string; labelled_anomaly: boolean; link?: string | null;
 }
 interface QueueData {
+  public?: boolean;
   method: string; budget: number; selected: string; statuses: string[];
   methods: { key: string; label: string; blurb: string }[]; rows: Row[];
 }
 interface CaseRecord { status: string; reviewer: string; notes: string; version: number; updated_at?: string }
 interface Detail extends Row {
-  rate: number; rate_source: string;
-  dates: { invoice: string; approved: string; paid: string; approval_delay_days: number };
+  rate: number; rate_source: string | null; public?: boolean;
+  dates: { invoice?: string; approved?: string; paid?: string; approval_delay_days?: number; action?: string };
+  context?: { office_median: number | null; office_payments: number; recipient_payments: number };
   details: { label: string; value: string | null }[];
   scores: { key: string; label: string; score: number; in_queue: boolean }[];
   evaluated: boolean;
@@ -42,12 +44,12 @@ export default function Review() {
       {queue.data && (
         <div className="row between" style={{ marginBottom: 14 }}>
           <Segmented label="Ranking method" value={queue.data.method} onChange={setMethod}
-            options={queue.data.methods.map((item) => ({ key: item.key, label: item.label + (item.key === queue.data!.selected ? " ★" : "") }))} />
+            options={queue.data.methods.map((item) => ({ key: item.key, label: item.label + (item.key === queue.data!.selected && !queue.data!.public ? " ★" : "") }))} />
           <Segmented label="Case status" value={status} onChange={setStatus}
             options={[{ key: "", label: "All" }, ...queue.data.statuses.map((item) => ({ key: item, label: item }))]} />
         </div>
       )}
-      {queue.data && <p className="small muted" style={{ marginTop: -6 }}>{queue.data.methods.find((item) => item.key === queue.data!.method)?.blurb} ★ = chosen on the validation period.</p>}
+      {queue.data && <p className="small muted" style={{ marginTop: -6 }}>{queue.data.methods.find((item) => item.key === queue.data!.method)?.blurb}{queue.data.public ? " Flags are prompts to look closer, not evidence of wrongdoing." : " ★ = chosen on the validation period."}</p>}
 
       {queue.error ? <Notice tone="warn">{queue.error}</Notice> : !queue.data ? <Skeleton height={480} /> : (
         <div className={`inbox ${id ? "has-selection" : ""}`}>
@@ -121,6 +123,7 @@ function TransactionDetail({ id, onSaved }: { id: string; onSaved: () => void })
           <div style={{ textAlign: "right" }}>
             <div style={{ fontSize: 24, fontWeight: 700 }} className="num">{usd(d.amount_usd)}</div>
             {d.currency !== "USD" && <div className="small muted num">{amount(d.amount, d.currency)} at {d.rate} USD each</div>}
+            {d.link && <a className="small" href={d.link} target="_blank" rel="noreferrer">Official record on USAspending.gov</a>}
           </div>
         </div>
       </div>
@@ -141,15 +144,23 @@ function TransactionDetail({ id, onSaved }: { id: string; onSaved: () => void })
         ))}
       </div>
 
-      <div>
-        <div className="stat-label" style={{ marginBottom: 6 }}>Timeline</div>
+      {d.public ? (
         <div className="row small" style={{ gap: 18 }}>
-          <span>Invoiced <strong>{day(d.dates.invoice)}</strong></span>
-          <span>Approved <strong>{day(d.dates.approved)}</strong></span>
-          <span>Paid <strong>{day(d.dates.paid)}</strong></span>
-          <span className="muted">{Math.round(d.dates.approval_delay_days)} days to approve</span>
+          <span>Recorded <strong>{day(d.dates.action!)}</strong></span>
+          {d.context?.office_median != null && <span>Typical payment for this office: <strong>{usd(d.context.office_median)}</strong> ({d.context.office_payments} payments)</span>}
+          {d.context && <span>{d.context.recipient_payments} payment{d.context.recipient_payments === 1 ? "" : "s"} to this recipient in the sample</span>}
         </div>
-      </div>
+      ) : (
+        <div>
+          <div className="stat-label" style={{ marginBottom: 6 }}>Timeline</div>
+          <div className="row small" style={{ gap: 18 }}>
+            <span>Invoiced <strong>{day(d.dates.invoice!)}</strong></span>
+            <span>Approved <strong>{day(d.dates.approved!)}</strong></span>
+            <span>Paid <strong>{day(d.dates.paid!)}</strong></span>
+            <span className="muted">{Math.round(d.dates.approval_delay_days ?? 0)} days to approve</span>
+          </div>
+        </div>
+      )}
 
       <dl className="kv" style={{ margin: 0 }}>
         {d.details.map((item) => <div key={item.label}><dt>{item.label}</dt><dd>{item.value ?? "—"}</dd></div>)}
@@ -188,6 +199,7 @@ function TransactionDetail({ id, onSaved }: { id: string; onSaved: () => void })
           </div>
         </div>
       )}
+      {d.public && <p className="small muted">A flag means this payment looks unusual next to the agency's others. It is not evidence of wrongdoing by the recipient.</p>}
       {!d.evaluated && <Notice>This payment is outside the test period, so it doesn't count toward the accuracy figures.</Notice>}
       {d.labelled_anomaly && <p className="small muted">In the evaluation labels this payment is marked as a genuine anomaly.</p>}
     </div>

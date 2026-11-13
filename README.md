@@ -11,6 +11,23 @@ python -m unittest discover -s tests -v
 python scripts/run_research.py
 ```
 
+### Real public spending (USAspending.gov)
+
+Besides the labelled demo, Audit Desk can analyse **real U.S. federal contract payments** from
+[USAspending.gov](https://www.usaspending.gov), which is public-domain U.S. government data. You choose an agency and a
+fiscal year on the **Your data** page. The app samples about 1,200 contract actions, the 100 most recent from each
+month of that fiscal year, and caches them for 7 days in `data/cache/` (git-ignored).
+
+Real spending has **no fraud labels**: no public source says which payments were improper. So the app does not claim
+accuracy. Instead it:
+
+- ranks the most unusual 10% of payments using plain rules (unusually large for the agency, the same amount to the same
+  recipient within 7 days, round amounts, weekend records) plus an isolation-forest pattern score trained only on
+  payments;
+- shows a reason for every flag, a link to the official record, and the buying office's typical payment;
+- keeps money returned (de-obligations) visible but out of the review queue;
+- states throughout that a flag is a prompt for a closer look, **never evidence of wrongdoing** by a named recipient.
+
 ### Audit Desk web app (preview)
 
 A React web app with a FastAPI backend (`api/`) built on the same `src/` code.

@@ -66,10 +66,32 @@ export function StatusBadge({ status }: { status: string }) {
 interface DatasetState { dataset: string; label: string; setDataset: (key: string, label: string) => void }
 const DatasetContext = createContext<DatasetState | null>(null);
 
+const STORAGE_KEY = "audit-desk-dataset";
+
+function initialDataset(): { dataset: string; label: string } {
+  try {
+    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "null");
+    if (saved && typeof saved.dataset === "string" && saved.dataset.startsWith("usa-")) return saved;
+  } catch {
+    /* ignore */
+  }
+  return { dataset: "demo", label: "Demo data" };
+}
+
 export function DatasetProvider({ children }: { children: ReactNode }) {
-  const [state, setState] = useState({ dataset: "demo", label: "Demo data" });
+  const [state, setState] = useState(initialDataset);
+  const setDataset = (dataset: string, label: string) => {
+    setState({ dataset, label });
+    try {
+      // Public datasets can be reloaded from the server; uploads live only in server memory, so they aren't remembered.
+      if (dataset.startsWith("usa-")) localStorage.setItem(STORAGE_KEY, JSON.stringify({ dataset, label }));
+      else localStorage.removeItem(STORAGE_KEY);
+    } catch {
+      /* storage unavailable */
+    }
+  };
   return (
-    <DatasetContext.Provider value={{ ...state, setDataset: (dataset, label) => setState({ dataset, label }) }}>
+    <DatasetContext.Provider value={{ ...state, setDataset }}>
       {children}
     </DatasetContext.Provider>
   );
